@@ -3,7 +3,7 @@ builder = "nixpacks"
 buildCommand = "cd server && npm install"
 
 [deploy]
-startCommand = "cd server && node db/seeds/seed.js && node index.js"
+startCommand = "cd server && node index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"

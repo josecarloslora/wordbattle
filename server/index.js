@@ -5,8 +5,9 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const migrate = require('./db/migrate');
-const { loadWords } = require('./services/wordService');
+const wordService = require('./services/wordService');
 const setupSocket = require('./socket');
+const { query } = require('./db');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,13 +26,45 @@ app.use('/api/rooms', require('./routes/rooms'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/words', require('./routes/words'));
 
-app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
+let dbReady = false;
+app.get('/health', (req, res) => res.json({ status: 'ok', dbReady, timestamp: new Date() }));
 
 const io = new Server(server, { cors: { origin: CLIENT_URL, credentials: true } });
 setupSocket(io, activeRooms);
 
-(async () => {
-  await migrate();
-  await loadWords();
-  server.listen(PORT, () => console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`));
-})();
+async function autoSeed() {
+  const { rows } = await query('SELECT COUNT(*) FROM words');
+  if (parseInt(rows[0].count) === 0) {
+    const path = require('path');
+    const fs = require('fs');
+    const esWords = JSON.parse(fs.readFileSync(path.join(__dirname, 'db/seeds/words_es.json'), 'utf8'));
+    const enWords = JSON.parse(fs.readFileSync(path.join(__dirname, 'db/seeds/words_en.json'), 'utf8'));
+    for (const w of esWords) await query('INSERT INTO words (word, language) VALUES ($1,$2) ON CONFLICT DO NOTHING', [w, 'es']);
+    for (const w of enWords) await query('INSERT INTO words (word, language) VALUES ($1,$2) ON CONFLICT DO NOTHING', [w, 'en']);
+    console.log(`[seed] Auto-seeded ${esWords.length} ES + ${enWords.length} EN words`);
+  }
+}
+
+async function initDatabase() {
+  let retries = 0;
+  while (retries < 20) {
+    try {
+      await migrate();
+      await autoSeed();
+      await wordService.loadWords();
+      dbReady = true;
+      console.log(`[${new Date().toISOString()}] Database ready`);
+      return;
+    } catch (err) {
+      retries++;
+      console.log(`[${new Date().toISOString()}] DB not ready (attempt ${retries}/20): ${err.message}`);
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  console.error('[db] Could not connect after 20 attempts');
+}
+
+server.listen(PORT, () => {
+  console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`);
+  initDatabase();
+});
