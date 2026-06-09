@@ -17,7 +17,7 @@ export default function DominoLobby() {
 
   const fetchRooms = async () => {
     try {
-      const data = await api.get('/rooms?gameType=domino');
+      const data = await api.get('/api/rooms?gameType=domino');
       setRooms(data.rooms || []);
     } catch {
       setError('Error cargando salas');
@@ -38,7 +38,7 @@ export default function DominoLobby() {
     setCreating(true);
     setError('');
     try {
-      const data = await api.post('/rooms', {
+      const data = await api.post('/api/rooms', {
         name: roomName.trim(),
         gameType: 'domino',
         maxPlayers: 4,

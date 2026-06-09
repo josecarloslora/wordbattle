@@ -74,6 +74,11 @@ async function initDatabase() {
   console.error('[db] Could not connect after 20 attempts');
 }
 
+app.use((err, req, res, next) => {
+  console.error('[express-error]', err.message);
+  res.status(500).json({ success: false, error: err.message || 'Internal server error' });
+});
+
 server.listen(PORT, () => {
   console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`);
   initDatabase();

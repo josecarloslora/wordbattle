@@ -73,7 +73,8 @@ CREATE INDEX IF NOT EXISTS idx_game_participants_game ON game_participants(game_
 
 ALTER TABLE games ADD COLUMN IF NOT EXISTS mode VARCHAR(15) NOT NULL DEFAULT 'multiplayer';
 
-ALTER TABLE rooms ADD COLUMN IF NOT EXISTS game_type VARCHAR(10) NOT NULL DEFAULT 'wordle';
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS game_type VARCHAR(10) DEFAULT 'wordle';
+UPDATE rooms SET game_type = 'wordle' WHERE game_type IS NULL;
 
 CREATE TABLE IF NOT EXISTS domino_games (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
