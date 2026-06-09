@@ -71,4 +71,4 @@ CREATE INDEX IF NOT EXISTS idx_rooms_status ON rooms(status);
 CREATE INDEX IF NOT EXISTS idx_rooms_public ON rooms(is_public);
 CREATE INDEX IF NOT EXISTS idx_game_participants_game ON game_participants(game_id);
 
-ALTER TABLE games ADD COLUMN IF NOT EXISTS mode VARCHAR(10) NOT NULL DEFAULT 'multiplayer';
+ALTER TABLE games ADD COLUMN IF NOT EXISTS mode VARCHAR(15) NOT NULL DEFAULT 'multiplayer';
