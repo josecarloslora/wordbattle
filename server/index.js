@@ -33,15 +33,23 @@ const io = new Server(server, { cors: { origin: CLIENT_URL, credentials: true } 
 setupSocket(io, activeRooms);
 
 async function autoSeed() {
+  const path = require('path');
+  const fs = require('fs');
+  const esWords = JSON.parse(fs.readFileSync(path.join(__dirname, 'db/seeds/words_es.json'), 'utf8'));
+  const enWords = JSON.parse(fs.readFileSync(path.join(__dirname, 'db/seeds/words_en.json'), 'utf8'));
+  const expected = esWords.length + enWords.length;
+
   const { rows } = await query('SELECT COUNT(*) FROM words');
-  if (parseInt(rows[0].count) === 0) {
-    const path = require('path');
-    const fs = require('fs');
-    const esWords = JSON.parse(fs.readFileSync(path.join(__dirname, 'db/seeds/words_es.json'), 'utf8'));
-    const enWords = JSON.parse(fs.readFileSync(path.join(__dirname, 'db/seeds/words_en.json'), 'utf8'));
+  const current = parseInt(rows[0].count);
+
+  if (current < expected * 0.9) {
+    console.log(`[seed] Word count ${current} < expected ${expected}, reseeding...`);
+    await query('DELETE FROM words');
     for (const w of esWords) await query('INSERT INTO words (word, language) VALUES ($1,$2) ON CONFLICT DO NOTHING', [w, 'es']);
     for (const w of enWords) await query('INSERT INTO words (word, language) VALUES ($1,$2) ON CONFLICT DO NOTHING', [w, 'en']);
-    console.log(`[seed] Auto-seeded ${esWords.length} ES + ${enWords.length} EN words`);
+    console.log(`[seed] Seeded ${esWords.length} ES + ${enWords.length} EN words`);
+  } else {
+    console.log(`[seed] Dictionary up to date (${current} words)`);
   }
 }
 
