@@ -65,7 +65,10 @@ export default function Lobby() {
     <div className="min-h-screen p-4 max-w-5xl mx-auto">
       <Toast toasts={toasts} />
       <header className="flex items-center justify-between mb-6 py-2">
-        <h1 className="text-3xl font-black">Word<span className="text-green-400">Battle</span></h1>
+        <div className="flex items-center gap-2">
+          <button onClick={() => nav('/select')} className="text-gray-500 hover:text-gray-300 text-sm mr-2 transition-colors">← Juegos</button>
+          <h1 className="text-2xl font-black"><span className="text-white">Bros</span><span className="text-indigo-400">Games</span> <span className="text-green-400 text-lg">Wordle</span></h1>
+        </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => nav(`/profile/${user?.id}`)}>
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white bg-indigo-600">

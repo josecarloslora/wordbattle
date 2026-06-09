@@ -30,6 +30,7 @@ function register(io, socket, activeRooms) {
       const { rows } = await query('SELECT * FROM rooms WHERE code=$1', [roomCode]);
       if (!rows.length) return socket.emit('error', { message: 'Room not found' });
       const room = rows[0];
+      if (room.game_type === 'domino') return socket.emit('error', { message: 'Esta es una sala de dominó' });
       if (room.status !== 'waiting') return socket.emit('error', { message: 'Game already started' });
 
       const memberCount = await query('SELECT COUNT(*) FROM room_members WHERE room_id=$1', [room.id]);

@@ -21,7 +21,7 @@ export default function Landing() {
         ? await api.post('/api/auth/register', form)
         : await api.post('/api/auth/login', { email: form.email, password: form.password });
       login(data.user, data.accessToken);
-      nav('/lobby');
+      nav('/select');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -34,9 +34,9 @@ export default function Landing() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <h1 className="text-5xl font-black tracking-tight">
-            Word<span className="text-green-400">Battle</span>
+            Bros<span className="text-indigo-400">Games</span>
           </h1>
-          <p className="text-gray-400 mt-2">Multiplayer Wordle — play with friends</p>
+          <p className="text-gray-400 mt-2">Wordle · Dominó — juega con tus amigos</p>
         </div>
 
         <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700 shadow-2xl">

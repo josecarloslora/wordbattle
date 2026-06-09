@@ -72,3 +72,27 @@ CREATE INDEX IF NOT EXISTS idx_rooms_public ON rooms(is_public);
 CREATE INDEX IF NOT EXISTS idx_game_participants_game ON game_participants(game_id);
 
 ALTER TABLE games ADD COLUMN IF NOT EXISTS mode VARCHAR(15) NOT NULL DEFAULT 'multiplayer';
+
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS game_type VARCHAR(10) NOT NULL DEFAULT 'wordle';
+
+CREATE TABLE IF NOT EXISTS domino_games (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id UUID REFERENCES rooms(id) ON DELETE SET NULL,
+  team1_score INTEGER DEFAULT 0,
+  team2_score INTEGER DEFAULT 0,
+  winner_team INTEGER,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  ended_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS domino_rounds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id UUID REFERENCES domino_games(id) ON DELETE CASCADE,
+  round_number INTEGER NOT NULL,
+  winner_team INTEGER,
+  points INTEGER DEFAULT 0,
+  is_tranque BOOLEAN DEFAULT FALSE,
+  ended_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rooms_game_type ON rooms(game_type);

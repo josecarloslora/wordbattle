@@ -4,11 +4,15 @@ import useAuthStore from './store/authStore';
 import { initApi } from './services/api';
 import ProtectedRoute from './components/ProtectedRoute';
 import Landing from './pages/Landing';
+import GameSelect from './pages/GameSelect';
 import Lobby from './pages/Lobby';
 import Room from './pages/Room';
 import Game from './pages/Game';
 import Profile from './pages/Profile';
 import Solo from './pages/Solo';
+import DominoLobby from './pages/DominoLobby';
+import DominoRoom from './pages/DominoRoom';
+import DominoGame from './pages/DominoGame';
 
 export default function App() {
   const { accessToken, setToken, isAuthenticated } = useAuthStore();
@@ -19,12 +23,16 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={isAuthenticated ? <Navigate to="/lobby" /> : <Landing />} />
+      <Route path="/" element={isAuthenticated ? <Navigate to="/select" /> : <Landing />} />
+      <Route path="/select" element={<ProtectedRoute><GameSelect /></ProtectedRoute>} />
       <Route path="/lobby" element={<ProtectedRoute><Lobby /></ProtectedRoute>} />
       <Route path="/room/:code" element={<ProtectedRoute><Room /></ProtectedRoute>} />
       <Route path="/game/:code" element={<ProtectedRoute><Game /></ProtectedRoute>} />
       <Route path="/profile/:id" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/solo" element={<ProtectedRoute><Solo /></ProtectedRoute>} />
+      <Route path="/domino" element={<ProtectedRoute><DominoLobby /></ProtectedRoute>} />
+      <Route path="/domino/room/:code" element={<ProtectedRoute><DominoRoom /></ProtectedRoute>} />
+      <Route path="/domino/game/:code" element={<ProtectedRoute><DominoGame /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
