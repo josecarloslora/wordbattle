@@ -25,6 +25,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/rooms', require('./routes/rooms'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/words', require('./routes/words'));
+app.use('/api/solo', require('./routes/solo'));
 
 let dbReady = false;
 app.get('/health', (req, res) => res.json({ status: 'ok', dbReady, timestamp: new Date() }));

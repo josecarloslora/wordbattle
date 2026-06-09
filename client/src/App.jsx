@@ -8,6 +8,7 @@ import Lobby from './pages/Lobby';
 import Room from './pages/Room';
 import Game from './pages/Game';
 import Profile from './pages/Profile';
+import Solo from './pages/Solo';
 
 export default function App() {
   const { accessToken, setToken, isAuthenticated } = useAuthStore();
@@ -23,6 +24,7 @@ export default function App() {
       <Route path="/room/:code" element={<ProtectedRoute><Room /></ProtectedRoute>} />
       <Route path="/game/:code" element={<ProtectedRoute><Game /></ProtectedRoute>} />
       <Route path="/profile/:id" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+      <Route path="/solo" element={<ProtectedRoute><Solo /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );

@@ -16,12 +16,12 @@ router.get('/:id/profile', async (req, res) => {
 router.get('/:id/history', async (req, res) => {
   const id = req.params.id === 'me' ? req.user.id : req.params.id;
   const { rows } = await query(
-    `SELECT gp.*, g.word, g.language, g.started_at, g.ended_at, g.winner_id, r.name AS room_name
+    `SELECT gp.*, g.word, g.language, g.mode, g.started_at, g.ended_at, g.winner_id, r.name AS room_name
      FROM game_participants gp
      JOIN games g ON g.id = gp.game_id
      LEFT JOIN rooms r ON r.id = g.room_id
      WHERE gp.user_id = $1
-     ORDER BY g.started_at DESC LIMIT 20`,
+     ORDER BY g.started_at DESC LIMIT 30`,
     [id]
   );
   res.json({ success: true, data: { games: rows } });

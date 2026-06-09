@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
+import useGameStore from '../store/gameStore';
 import api from '../services/api';
 import socketSvc from '../services/socket';
 import LanguageToggle from '../components/LanguageToggle';
@@ -12,6 +13,7 @@ export default function Room() {
   const { code } = useParams();
   const nav = useNavigate();
   const { user, accessToken } = useAuthStore();
+  const { setStartTime, setLanguage } = useGameStore();
   const { toasts, addToast } = useToast();
 
   const [room, setRoom] = useState(null);
@@ -36,10 +38,14 @@ export default function Room() {
       setPlayers(prev => prev.find(p => p.id === userId) ? prev : [...prev, { id: userId, username, avatarColor: '#6366f1', isReady: false }]);
     });
     socket.on('player-left', ({ userId }) => setPlayers(prev => prev.filter(p => p.id !== userId)));
-    socket.on('player-ready-update', ({ userId, readyCount }) => {
+    socket.on('player-ready-update', ({ userId }) => {
       setPlayers(prev => prev.map(p => p.id === userId ? { ...p, isReady: true } : p));
     });
-    socket.on('game-start', () => nav(`/game/${code}`));
+    socket.on('game-start', ({ startTime: st, language: lang }) => {
+      setStartTime(st);
+      setLanguage(lang || 'es');
+      nav(`/game/${code}`);
+    });
     socket.on('error', ({ message }) => addToast(message, 'error'));
 
     return () => {
@@ -61,14 +67,14 @@ export default function Room() {
     socketSvc.emit('force-start', { roomCode: code });
   }
 
-  async function handleLeave() {
+  function handleLeave() {
     socketSvc.emit('leave-room', { roomCode: code });
     nav('/lobby');
   }
 
   async function copyCode() {
     await navigator.clipboard.writeText(code);
-    addToast('Code copied!', 'success', 1500);
+    addToast('Código copiado', 'success', 1500);
   }
 
   const isHost = room?.host_id === user?.id;
@@ -78,19 +84,25 @@ export default function Room() {
   return (
     <div className="min-h-screen p-4 max-w-2xl mx-auto">
       <Toast toasts={toasts} />
+
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">{room?.name}</h1>
+        <div className="flex items-center gap-3">
+          <button onClick={handleLeave} className="text-gray-400 hover:text-white transition-colors flex items-center gap-1 text-sm">
+            ← Lobby
+          </button>
+          <h1 className="text-2xl font-bold">{room?.name}</h1>
+        </div>
         <button onClick={handleLeave} className="text-sm px-3 py-1.5 bg-red-900 hover:bg-red-800 text-red-200 rounded-lg transition-colors">
-          Leave
+          Salir
         </button>
       </div>
 
       <div className="bg-gray-800 rounded-2xl p-5 border border-gray-700 mb-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <span className="text-gray-400 text-sm">Room code:</span>
+            <span className="text-gray-400 text-sm">Código:</span>
             <code className="text-xl font-mono font-bold text-indigo-400">{code}</code>
-            <button onClick={copyCode} className="text-gray-500 hover:text-white text-sm">📋</button>
+            <button onClick={copyCode} className="text-gray-500 hover:text-white text-sm" title="Copiar código">📋</button>
           </div>
           <span className={`text-xs font-bold px-2 py-1 rounded ${room?.language === 'es' ? 'bg-yellow-600 text-white' : 'bg-blue-600 text-white'}`}>
             {room?.language?.toUpperCase()}
@@ -98,7 +110,7 @@ export default function Room() {
         </div>
         {isHost && (
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-400">Language:</span>
+            <span className="text-sm text-gray-400">Idioma:</span>
             <LanguageToggle value={room?.language || 'es'} onChange={() => {}} />
           </div>
         )}
@@ -106,7 +118,7 @@ export default function Room() {
 
       <div className="bg-gray-800 rounded-2xl p-5 border border-gray-700 mb-5">
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Players ({players.length}/{room?.max_players})
+          Jugadores ({players.length}/{room?.max_players})
         </h2>
         <div className="flex flex-col gap-2">
           {players.map(p => (
@@ -118,9 +130,11 @@ export default function Room() {
                 </div>
                 <span className="font-medium">{p.username}</span>
                 {p.isHost && <span className="text-xs bg-indigo-900 text-indigo-300 px-2 py-0.5 rounded">Host</span>}
-                {p.id === user?.id && <span className="text-xs text-gray-500">(you)</span>}
+                {p.id === user?.id && <span className="text-xs text-gray-500">(tú)</span>}
               </div>
-              {p.isReady ? <span className="text-green-400 font-bold text-sm">✓ Ready</span> : <span className="text-gray-600 text-sm">Waiting...</span>}
+              {p.isReady
+                ? <span className="text-green-400 font-bold text-sm">✓ Listo</span>
+                : <span className="text-gray-600 text-sm">Esperando...</span>}
             </div>
           ))}
         </div>
@@ -129,13 +143,17 @@ export default function Room() {
       <div className="flex gap-3">
         {!ready && (
           <button onClick={handleReady} className="flex-1 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition-colors">
-            I'm Ready
+            Estoy listo
           </button>
         )}
-        {ready && <div className="flex-1 py-3 bg-gray-700 text-gray-400 font-bold rounded-xl text-center">Waiting for others...</div>}
+        {ready && (
+          <div className="flex-1 py-3 bg-gray-700 text-gray-400 font-bold rounded-xl text-center">
+            Esperando a los demás...
+          </div>
+        )}
         {isHost && players.filter(p => p.isReady).length >= 2 && (
           <button onClick={handleForceStart} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors">
-            Force Start
+            Iniciar
           </button>
         )}
       </div>
