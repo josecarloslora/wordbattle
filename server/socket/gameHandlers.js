@@ -4,39 +4,49 @@ const { getRandomWord, isValidWord } = require('../services/wordService');
 const { updateStats } = require('../services/statsService');
 
 async function startGame(io, roomCode, activeRoom) {
-  const word = getRandomWord(activeRoom.language);
-  if (!word) return;
+  try {
+    const word = getRandomWord(activeRoom.language);
+    if (!word) {
+      console.error(`[startGame] No word found for language ${activeRoom.language}`);
+      io.to(roomCode).emit('error', { message: 'Error al cargar la palabra. Intenta de nuevo.' });
+      return;
+    }
 
-  const { rows: gameRows } = await query(
-    'INSERT INTO games (room_id, word, language) VALUES ((SELECT id FROM rooms WHERE code=$1), $2, $3) RETURNING id',
-    [roomCode, word, activeRoom.language]
-  );
-  const gameId = gameRows[0].id;
+    const { rows: gameRows } = await query(
+      'INSERT INTO games (room_id, word, language) VALUES ((SELECT id FROM rooms WHERE code=$1), $2, $3) RETURNING id',
+      [roomCode, word, activeRoom.language]
+    );
+    if (!gameRows.length) throw new Error('Game insert returned no rows');
+    const gameId = gameRows[0].id;
 
-  for (const [userId] of activeRoom.players.entries()) {
-    await query('INSERT INTO game_participants (game_id, user_id) VALUES ($1,$2)', [gameId, userId]);
+    for (const [userId] of activeRoom.players.entries()) {
+      await query('INSERT INTO game_participants (game_id, user_id) VALUES ($1,$2)', [gameId, userId]);
+    }
+
+    await query("UPDATE rooms SET status='in_game' WHERE code=$1", [roomCode]);
+    activeRoom.status = 'in_game';
+    activeRoom.gameId = gameId;
+    activeRoom.word = word;
+    activeRoom.startTime = Date.now();
+
+    for (const [, player] of activeRoom.players.entries()) {
+      player.isReady = false;
+      player.solved = false;
+      player.attempts = [];
+    }
+    activeRoom.readyCount = 0;
+
+    io.to(roomCode).emit('game-start', {
+      wordLength: 5,
+      language: activeRoom.language,
+      startTime: activeRoom.startTime,
+      playerCount: activeRoom.players.size,
+    });
+    console.log(`[${new Date().toISOString()}] Game started in room ${roomCode} word: ${word}`);
+  } catch (err) {
+    console.error(`[startGame] ERROR in room ${roomCode}:`, err.message);
+    io.to(roomCode).emit('error', { message: 'Error al iniciar la partida. Intenta de nuevo.' });
   }
-
-  await query("UPDATE rooms SET status='in_game' WHERE code=$1", [roomCode]);
-  activeRoom.status = 'in_game';
-  activeRoom.gameId = gameId;
-  activeRoom.word = word;
-  activeRoom.startTime = Date.now();
-
-  for (const [, player] of activeRoom.players.entries()) {
-    player.isReady = false;
-    player.solved = false;
-    player.attempts = [];
-  }
-  activeRoom.readyCount = 0;
-
-  io.to(roomCode).emit('game-start', {
-    wordLength: 5,
-    language: activeRoom.language,
-    startTime: activeRoom.startTime,
-    playerCount: activeRoom.players.size,
-  });
-  console.log(`[${new Date().toISOString()}] Game started in room ${roomCode} word: ${word}`);
 }
 
 function register(io, socket, activeRooms) {
