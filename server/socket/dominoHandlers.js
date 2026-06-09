@@ -2,6 +2,9 @@ const { query } = require('../db');
 
 const activeDominoRooms = new Map();
 
+const BOT_NAMES = ['Bot Cruz', 'Bot Ramón', 'Bot María', 'Bot Nico'];
+const BOT_COLORS = ['#6b7280', '#6b7280', '#6b7280', '#6b7280'];
+
 function generateAllTiles() {
   const tiles = [];
   for (let high = 6; high >= 0; high--) {
@@ -9,7 +12,7 @@ function generateAllTiles() {
       tiles.push({ id: `${high}-${low}`, high, low });
     }
   }
-  return tiles; // 28 tiles
+  return tiles;
 }
 
 function shuffle(arr) {
@@ -40,6 +43,7 @@ function getPlayersInfo(room) {
     tileCount: p.hand.length,
     isHost: p.isHost,
     isReady: p.isReady,
+    isBot: p.isBot || false,
   }));
 }
 
@@ -49,18 +53,135 @@ function getSeatOrder(room) {
     .map(([id]) => id);
 }
 
+function createBot(seat) {
+  return {
+    socketId: `bot-${seat}`,
+    username: BOT_NAMES[seat] || `Bot-${seat + 1}`,
+    avatarColor: BOT_COLORS[seat],
+    team: [1, 2, 1, 2][seat],
+    seat,
+    hand: [],
+    isReady: true,
+    isHost: false,
+    isBot: true,
+  };
+}
+
+function placeTileOnBoard(room, tile, side) {
+  const isEmpty = room.board.length === 0;
+  let boardTile;
+
+  if (isEmpty) {
+    boardTile = { tile, left: tile.low, right: tile.high, isDouble: tile.high === tile.low };
+    room.board.push(boardTile);
+    room.leftEnd = tile.low;
+    room.rightEnd = tile.high;
+    room.forcedFirstTile = null;
+  } else if (side === 'left') {
+    const left = tile.high === room.leftEnd ? tile.low : tile.high;
+    const right = tile.high === room.leftEnd ? tile.high : tile.low;
+    boardTile = { tile, left, right, isDouble: tile.high === tile.low };
+    room.board.unshift(boardTile);
+    room.leftEnd = left;
+  } else {
+    const right = tile.low === room.rightEnd ? tile.high : tile.low;
+    const left = tile.low === room.rightEnd ? tile.low : tile.high;
+    boardTile = { tile, left, right, isDouble: tile.high === tile.low };
+    room.board.push(boardTile);
+    room.rightEnd = right;
+  }
+
+  return boardTile;
+}
+
+function scheduleBotMove(io, roomCode, room) {
+  const botId = room.currentPlayer;
+  const bot = room.players.get(botId);
+  if (!bot || !bot.isBot) return;
+
+  const delay = 1200 + Math.random() * 800;
+  setTimeout(() => {
+    if (room.status !== 'playing' || room.currentPlayer !== botId) return;
+    doBotMove(io, roomCode, room);
+  }, delay);
+}
+
+function doBotMove(io, roomCode, room) {
+  const botId = room.currentPlayer;
+  const bot = room.players.get(botId);
+  if (!bot || !bot.isBot || room.status !== 'playing') return;
+
+  const isEmpty = room.board.length === 0;
+
+  const validTiles = bot.hand.filter(t => {
+    if (isEmpty) return !room.forcedFirstTile || t.id === room.forcedFirstTile;
+    return t.high === room.leftEnd || t.low === room.leftEnd || t.high === room.rightEnd || t.low === room.rightEnd;
+  });
+
+  if (validTiles.length === 0) {
+    room.passCount++;
+    io.to(roomCode).emit('domino:player-passed', {
+      playerId: botId,
+      username: bot.username,
+      passCount: room.passCount,
+    });
+    if (room.passCount >= 4) {
+      endRound(io, roomCode, room, null, true);
+    } else {
+      advanceTurn(io, roomCode, room);
+    }
+    return;
+  }
+
+  const tile = validTiles[Math.floor(Math.random() * validTiles.length)];
+
+  let side;
+  if (isEmpty) {
+    side = 'right';
+  } else {
+    const canLeft = tile.high === room.leftEnd || tile.low === room.leftEnd;
+    const canRight = tile.high === room.rightEnd || tile.low === room.rightEnd;
+    if (canLeft && canRight) side = Math.random() < 0.5 ? 'left' : 'right';
+    else side = canLeft ? 'left' : 'right';
+  }
+
+  const tileIdx = bot.hand.findIndex(t => t.id === tile.id);
+  bot.hand.splice(tileIdx, 1);
+  room.passCount = 0;
+
+  placeTileOnBoard(room, tile, side);
+
+  io.to(roomCode).emit('domino:tile-played', {
+    playerId: botId,
+    tileId: tile.id,
+    side,
+    board: room.board,
+    leftEnd: room.leftEnd,
+    rightEnd: room.rightEnd,
+    players: getPlayersInfo(room),
+  });
+
+  if (bot.hand.length === 0) {
+    endRound(io, roomCode, room, botId, false);
+    return;
+  }
+
+  advanceTurn(io, roomCode, room);
+}
+
 function advanceTurn(io, roomCode, room) {
   const seats = getSeatOrder(room);
   const idx = seats.indexOf(room.currentPlayer);
   room.currentPlayer = seats[(idx + 1) % seats.length];
   io.to(roomCode).emit('domino:turn-change', { currentPlayer: room.currentPlayer });
+  scheduleBotMove(io, roomCode, room);
 }
 
 async function startNewRound(io, roomCode, room, isFirstRound) {
   const tiles = shuffle(generateAllTiles());
   const seats = getSeatOrder(room);
 
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < seats.length; i++) {
     const player = room.players.get(seats[i]);
     player.hand = tiles.slice(i * 7, (i + 1) * 7);
     player.isReady = false;
@@ -85,8 +206,7 @@ async function startNewRound(io, roomCode, room, isFirstRound) {
   if (isFirstRound && !room.gameId) {
     try {
       const { rows } = await query(
-        `INSERT INTO domino_games (room_id)
-         SELECT id FROM rooms WHERE code=$1 RETURNING id`,
+        `INSERT INTO domino_games (room_id) SELECT id FROM rooms WHERE code=$1 RETURNING id`,
         [roomCode]
       );
       if (rows.length) room.gameId = rows[0].id;
@@ -95,7 +215,9 @@ async function startNewRound(io, roomCode, room, isFirstRound) {
     }
   }
 
+  // Emit to human players only
   for (const [uid, player] of room.players) {
+    if (player.isBot) continue;
     io.to(player.socketId).emit('domino:round-start', {
       hand: player.hand,
       currentPlayer: starterId,
@@ -111,6 +233,15 @@ async function startNewRound(io, roomCode, room, isFirstRound) {
   }
 
   console.log(`[domino] Round ${room.roundNumber} started in ${roomCode}, starter: ${room.players.get(starterId)?.username}`);
+
+  // If starter is a bot, schedule their first move with a bit more delay
+  if (room.players.get(starterId)?.isBot) {
+    const botId = starterId;
+    setTimeout(() => {
+      if (room.status !== 'playing' || room.currentPlayer !== botId) return;
+      doBotMove(io, roomCode, room);
+    }, 2000);
+  }
 }
 
 async function endRound(io, roomCode, room, winnerId, isTranque) {
@@ -141,17 +272,14 @@ async function endRound(io, roomCode, room, winnerId, isTranque) {
         `INSERT INTO domino_rounds (game_id, round_number, winner_team, points, is_tranque) VALUES ($1,$2,$3,$4,$5)`,
         [room.gameId, room.roundNumber, winnerTeam, totalPoints, isTranque]
       );
-      await query(
-        'UPDATE domino_games SET team1_score=$1, team2_score=$2 WHERE id=$3',
-        [room.scores.team1, room.scores.team2, room.gameId]
-      );
+      await query('UPDATE domino_games SET team1_score=$1, team2_score=$2 WHERE id=$3',
+        [room.scores.team1, room.scores.team2, room.gameId]);
     }
   } catch (err) {
     console.error('[domino] endRound DB err:', err.message);
   }
 
   const gameOver = room.scores.team1 >= room.targetScore || room.scores.team2 >= room.targetScore;
-
   const roundResult = {
     winnerTeam,
     points: totalPoints,
@@ -205,7 +333,6 @@ function register(io, socket, activeDominoRooms) {
       const dr = activeDominoRooms.get(roomCode);
 
       if (dr.players.has(socket.user.id)) {
-        // Reconnect: update socketId, send current state
         const player = dr.players.get(socket.user.id);
         player.socketId = socket.id;
 
@@ -233,13 +360,18 @@ function register(io, socket, activeDominoRooms) {
         return;
       }
 
-      // New player joining
       if (dr.status !== 'waiting') return socket.emit('domino:error', { message: 'Partida en curso' });
-      if (dr.players.size >= 4) return socket.emit('domino:error', { message: 'Sala llena (máx 4 jugadores)' });
+
+      const humanCount = Array.from(dr.players.values()).filter(p => !p.isBot).length;
+      if (humanCount >= 4) return socket.emit('domino:error', { message: 'Sala llena (máx 4 jugadores)' });
+
+      // Find first available seat (skip bot-reserved seats)
+      const takenSeats = new Set(Array.from(dr.players.values()).map(p => p.seat));
+      let seatIndex = 0;
+      while (takenSeats.has(seatIndex)) seatIndex++;
 
       await query('INSERT INTO room_members (room_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING', [roomRow.id, socket.user.id]);
 
-      const seatIndex = dr.players.size;
       const team = [1, 2, 1, 2][seatIndex];
       dr.players.set(socket.user.id, {
         socketId: socket.id,
@@ -250,6 +382,7 @@ function register(io, socket, activeDominoRooms) {
         hand: [],
         isReady: false,
         isHost: roomRow.host_id === socket.user.id,
+        isBot: false,
       });
 
       socket.emit('domino:room-state', {
@@ -287,9 +420,36 @@ function register(io, socket, activeDominoRooms) {
       players: getPlayersInfo(dr),
     });
 
-    if (dr.readyCount >= 4 && dr.players.size === 4) {
+    const humanPlayers = Array.from(dr.players.values()).filter(p => !p.isBot);
+    const humanReady = humanPlayers.every(p => p.isReady);
+
+    if (humanReady && dr.players.size === 4) {
       await startNewRound(io, roomCode, dr, true);
     }
+  });
+
+  socket.on('domino:start-with-bots', async ({ roomCode }) => {
+    const dr = activeDominoRooms.get(roomCode);
+    if (!dr || dr.status !== 'waiting') return;
+    if (!dr.players.has(socket.user.id)) return;
+
+    const humanPlayers = Array.from(dr.players.values()).filter(p => !p.isBot);
+    if (humanPlayers.length === 0) return;
+
+    // Mark all humans as ready
+    for (const [, p] of dr.players) p.isReady = true;
+
+    // Fill remaining seats with bots
+    const takenSeats = new Set(Array.from(dr.players.values()).map(p => p.seat));
+    for (let seat = 0; seat < 4; seat++) {
+      if (!takenSeats.has(seat)) {
+        dr.players.set(`bot-${seat}`, createBot(seat));
+      }
+    }
+
+    io.to(roomCode).emit('domino:bots-added', { players: getPlayersInfo(dr) });
+    console.log(`[domino] Starting room ${roomCode} with bots (${humanPlayers.length} humans)`);
+    await startNewRound(io, roomCode, dr, true);
   });
 
   socket.on('domino:play-tile', async ({ roomCode, tileId, side }) => {
@@ -312,34 +472,17 @@ function register(io, socket, activeDominoRooms) {
       return socket.emit('domino:error', { message: `Debes comenzar con la ficha ${dr.forcedFirstTile.replace('-', '|')}` });
     }
 
-    let boardTile;
-
-    if (isEmpty) {
-      boardTile = { tile, left: tile.low, right: tile.high, isDouble: tile.high === tile.low };
-      dr.board.push(boardTile);
-      dr.leftEnd = tile.low;
-      dr.rightEnd = tile.high;
-      dr.forcedFirstTile = null;
-    } else {
+    if (!isEmpty) {
       const targetEnd = side === 'left' ? dr.leftEnd : dr.rightEnd;
       if (tile.high !== targetEnd && tile.low !== targetEnd) {
         return socket.emit('domino:error', { message: 'Esa ficha no encaja en ese lado' });
-      }
-      if (side === 'left') {
-        const left = tile.high === dr.leftEnd ? tile.low : tile.high;
-        boardTile = { tile, left, right: tile.high === dr.leftEnd ? tile.high : tile.low, isDouble: tile.high === tile.low };
-        dr.board.unshift(boardTile);
-        dr.leftEnd = left;
-      } else {
-        const right = tile.low === dr.rightEnd ? tile.high : tile.low;
-        boardTile = { tile, left: tile.low === dr.rightEnd ? tile.low : tile.high, right, isDouble: tile.high === tile.low };
-        dr.board.push(boardTile);
-        dr.rightEnd = right;
       }
     }
 
     player.hand.splice(tileIdx, 1);
     dr.passCount = 0;
+
+    placeTileOnBoard(dr, tile, side);
 
     io.to(roomCode).emit('domino:tile-played', {
       playerId: socket.user.id,
@@ -393,7 +536,8 @@ function register(io, socket, activeDominoRooms) {
     socket.leave(roomCode);
     try {
       await query('DELETE FROM room_members WHERE room_id=(SELECT id FROM rooms WHERE code=$1) AND user_id=$2', [roomCode, socket.user.id]);
-      if (dr.players.size === 0) {
+      const humanPlayers = Array.from(dr.players.values()).filter(p => !p.isBot);
+      if (humanPlayers.length === 0) {
         activeDominoRooms.delete(roomCode);
         await query('DELETE FROM rooms WHERE code=$1', [roomCode]);
       } else {
