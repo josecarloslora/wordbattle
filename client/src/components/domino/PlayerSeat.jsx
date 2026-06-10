@@ -1,71 +1,130 @@
+const TEAM_STYLES = {
+  1: { border: '#3b82f6', bg: 'rgba(30,58,138,0.5)', badge: 'rgba(37,99,235,0.8)', text: '#93c5fd' },
+  2: { border: '#ef4444', bg: 'rgba(127,29,29,0.5)', badge: 'rgba(185,28,28,0.8)', text: '#fca5a5' },
+};
+
 export default function PlayerSeat({ player, isCurrentPlayer, isMe, compact = false }) {
+  const ts = TEAM_STYLES[player?.team] || TEAM_STYLES[1];
+
   if (!player) {
     return (
-      <div className={`border-2 border-dashed border-gray-700 rounded-xl flex items-center justify-center text-gray-600 text-sm ${compact ? 'p-2 h-16' : 'p-4 h-28'}`}>
-        Esperando...
+      <div
+        style={{ border: '1.5px dashed rgba(255,255,255,0.1)', borderRadius: 8 }}
+        className={`flex items-center justify-center text-gray-600 text-xs ${compact ? 'p-2 h-14' : 'p-4 h-28'}`}
+      >
+        {compact ? '···' : 'Esperando...'}
       </div>
     );
   }
-
-  const teamColor = player.team === 1
-    ? 'border-blue-500 bg-blue-950'
-    : 'border-red-500 bg-red-950';
-
-  const teamBadge = player.team === 1
-    ? 'bg-blue-700 text-blue-100'
-    : 'bg-red-700 text-red-100';
-
-  const turnRing = isCurrentPlayer ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-gray-900' : '';
 
   if (compact) {
     return (
-      <div className={`border ${teamColor} ${turnRing} rounded-lg p-2 flex items-center gap-2 relative`}>
+      <div
+        style={{
+          border: `1.5px solid ${isCurrentPlayer ? '#fbbf24' : ts.border}`,
+          background: isCurrentPlayer ? 'rgba(251,191,36,0.08)' : ts.bg,
+          borderRadius: 8,
+          boxShadow: isCurrentPlayer ? '0 0 8px rgba(251,191,36,0.3)' : 'none',
+          transition: 'all 0.25s ease',
+          position: 'relative',
+          padding: '6px 8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          minWidth: 0,
+        }}
+      >
         {isCurrentPlayer && (
-          <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs bg-yellow-400 text-black px-1 rounded font-bold">
+          <span
+            style={{
+              position: 'absolute', top: -10, left: '50%', transform: 'translateX(-50%)',
+              fontSize: 9, fontWeight: 800, letterSpacing: '0.06em',
+              backgroundColor: '#fbbf24', color: '#000', padding: '1px 5px', borderRadius: 3,
+              whiteSpace: 'nowrap',
+            }}
+          >
             TURNO
           </span>
         )}
+
         <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-          style={{ backgroundColor: player.avatarColor || '#6366f1' }}
+          style={{
+            width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+            backgroundColor: player.isBot ? '#374151' : (player.avatarColor || '#6366f1'),
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 11, fontWeight: 700, color: '#fff',
+            border: `2px solid ${ts.border}`,
+          }}
         >
-          {player.username[0].toUpperCase()}
+          {player.isBot ? '🤖' : player.username[0].toUpperCase()}
         </div>
-        <div className="min-w-0">
-          <div className="text-white text-xs font-semibold truncate max-w-[72px]">
+
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {isMe ? 'Tú' : player.username}
           </div>
-          <div className="text-gray-400 text-xs">{player.tileCount} fichas</div>
+          <div style={{ fontSize: 10, color: ts.text }}>
+            {player.tileCount} {player.tileCount === 1 ? 'ficha' : 'fichas'}
+          </div>
         </div>
-        <span className={`text-xs px-1 rounded ${teamBadge} flex-shrink-0`}>T{player.team}</span>
       </div>
     );
   }
 
+  // Full mode (lobby/room)
   return (
-    <div className={`border-2 ${teamColor} ${turnRing} rounded-xl p-3 flex flex-col items-center gap-1 relative`}>
+    <div
+      style={{
+        border: `2px solid ${ts.border}`,
+        background: ts.bg,
+        borderRadius: 12,
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 6,
+        position: 'relative',
+      }}
+    >
       {isCurrentPlayer && (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-xs bg-yellow-400 text-black px-2 py-0.5 rounded-full font-bold whitespace-nowrap">
+        <span
+          style={{
+            position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
+            fontSize: 10, fontWeight: 800,
+            backgroundColor: '#fbbf24', color: '#000', padding: '2px 8px', borderRadius: 4,
+            whiteSpace: 'nowrap',
+          }}
+        >
           ES SU TURNO
         </span>
       )}
       <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
-        style={{ backgroundColor: player.avatarColor || '#6366f1' }}
+        style={{
+          width: 40, height: 40, borderRadius: '50%',
+          backgroundColor: player.isBot ? '#374151' : (player.avatarColor || '#6366f1'),
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 15, fontWeight: 700, color: '#fff',
+          border: `2px solid ${ts.border}`,
+        }}
       >
-        {player.username[0].toUpperCase()}
+        {player.isBot ? '🤖' : player.username[0].toUpperCase()}
       </div>
-      <div className="text-white text-sm font-semibold text-center truncate max-w-[90px]">
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#f1f5f9', textAlign: 'center', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {isMe ? `Tú (${player.username})` : player.username}
       </div>
-      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${teamBadge}`}>
+      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, backgroundColor: ts.badge, color: '#fff', fontWeight: 600 }}>
         Equipo {player.team}
       </span>
-      <div className="flex gap-1 mt-1 flex-wrap justify-center">
-        {Array.from({ length: player.tileCount }).map((_, i) => (
-          <div key={i} className="w-3 h-5 bg-gray-600 rounded-sm border border-gray-500" />
-        ))}
-      </div>
+      {player.tileCount !== undefined && (
+        <div style={{ display: 'flex', gap: 2, marginTop: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+          {Array.from({ length: Math.min(player.tileCount, 7) }).map((_, i) => (
+            <div
+              key={i}
+              style={{ width: 11, height: 18, backgroundColor: '#374151', borderRadius: 2, border: '1px solid #4b5563' }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

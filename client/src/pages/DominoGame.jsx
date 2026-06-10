@@ -83,6 +83,13 @@ export default function DominoGame() {
       setLoadingTimedOut(false);
     });
 
+    // If we arrive before the game starts (race condition), room-state is sent.
+    // Just keep waiting — domino:round-starting will arrive shortly.
+    socket.on('domino:room-state', () => {
+      // Game hasn't started yet; stay in loading state and wait for round-starting
+      console.log('[DominoGame] got room-state while waiting — game starting soon');
+    });
+
     socket.on('domino:hand-update', ({ hand: h }) => {
       setHand(h);
       setLoading(false);
@@ -99,6 +106,9 @@ export default function DominoGame() {
       setScores(data.scores || { team1: 0, team2: 0 });
       setRoundNumber(data.roundNumber || 1);
       setForcedFirstTile(data.forcedFirstTile || null);
+      // Use hand/myTeam from personalized payload if present
+      if (data.hand) setHand(data.hand);
+      if (data.myTeam != null) setMyTeam(data.myTeam);
       setPhase('playing');
       setSelectedTile(null);
       setRoundResult(null);
@@ -161,6 +171,7 @@ export default function DominoGame() {
       clearTimeout(toastTimer.current);
       socket.off('connect', onConnect);
       socket.off('domino:game-state');
+      socket.off('domino:room-state');
       socket.off('domino:hand-update');
       socket.off('domino:round-starting');
       socket.off('domino:tile-played');

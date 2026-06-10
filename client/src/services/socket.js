@@ -3,16 +3,28 @@ import { io } from 'socket.io-client';
 const URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 let socket = null;
+let _token = null;
 
 export function connect(token) {
-  if (socket?.connected) return socket;
+  // Reuse existing socket if token matches and socket is still alive (connected or connecting)
+  if (socket && _token === token && !socket.disconnected) return socket;
+  // Tear down stale socket
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+  }
   socket = io(URL, { auth: { token }, transports: ['websocket'] });
+  _token = token;
   return socket;
 }
 
 export function disconnect() {
-  socket?.disconnect();
-  socket = null;
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+    socket = null;
+    _token = null;
+  }
 }
 
 export function emit(event, data) {
