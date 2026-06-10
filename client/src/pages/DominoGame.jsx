@@ -1,12 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
 import useAuthStore from '../store/authStore';
+import { getDominoSocket, destroyDominoSocket } from '../services/dominoSocket';
 import DominoTile from '../components/domino/DominoTile';
 import DominoBoard from '../components/domino/DominoBoard';
 import PlayerSeat from '../components/domino/PlayerSeat';
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 function canPlay(tile, leftEnd, rightEnd) {
   return tile.high === leftEnd || tile.low === leftEnd || tile.high === rightEnd || tile.low === rightEnd;
@@ -52,12 +50,20 @@ export default function DominoGame() {
 
   useEffect(() => {
     if (!token) return;
-    const socket = io(SOCKET_URL, { auth: { token } });
+
+    // Reuse the singleton socket from DominoRoom — already connected, already in the room.
+    // If coming from a fresh URL (e.g., browser refresh), creates a new connection.
+    const socket = getDominoSocket(token);
     socketRef.current = socket;
 
+    // Ask server for current game state (triggers domino:game-state if playing)
     socket.emit('domino:join-room', { roomCode: code });
 
-    // Retry in case server wasn't ready when we first joined
+    // Re-join on auto-reconnect
+    const onConnect = () => socket.emit('domino:join-room', { roomCode: code });
+    socket.on('connect', onConnect);
+
+    // Retry once more in case server was mid-startNewRound on first join
     const retryJoin = setTimeout(() => socket.emit('domino:join-room', { roomCode: code }), 2000);
 
     socket.on('domino:game-state', (data) => {
@@ -153,7 +159,18 @@ export default function DominoGame() {
       clearTimeout(retryJoin);
       clearTimeout(fallback);
       clearTimeout(toastTimer.current);
-      socket.disconnect();
+      socket.off('connect', onConnect);
+      socket.off('domino:game-state');
+      socket.off('domino:hand-update');
+      socket.off('domino:round-starting');
+      socket.off('domino:tile-played');
+      socket.off('domino:turn-change');
+      socket.off('domino:player-passed');
+      socket.off('domino:round-over');
+      socket.off('domino:game-over');
+      socket.off('domino:player-left');
+      socket.off('domino:error');
+      // Socket stays alive — destroyDominoSocket() called only on explicit leave
     };
   }, [code, token]);
 
@@ -203,6 +220,7 @@ export default function DominoGame() {
 
   const handleLeave = () => {
     socketRef.current?.emit('domino:leave-room', { roomCode: code });
+    destroyDominoSocket();
     nav('/domino');
   };
 
@@ -255,7 +273,7 @@ export default function DominoGame() {
             Reintentar
           </button>
           <button
-            onClick={() => nav('/domino')}
+            onClick={() => { destroyDominoSocket(); nav('/domino'); }}
             style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: 14, color: '#9ca3af', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
           >
             Volver al lobby
@@ -572,7 +590,7 @@ export default function DominoGame() {
 
             <div style={{ display: 'flex', gap: 10 }}>
               <button
-                onClick={() => nav('/domino')}
+                onClick={() => { destroyDominoSocket(); nav('/domino'); }}
                 style={{ flex: 1, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '13px 0', fontSize: 14, fontWeight: 600, color: '#d1d5db', cursor: 'pointer' }}
               >
                 Lobby
