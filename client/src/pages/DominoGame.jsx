@@ -51,23 +51,31 @@ export default function DominoGame() {
   useEffect(() => {
     if (!token) return;
 
-    // Reuse the singleton socket from DominoRoom — already connected, already in the room.
-    // If coming from a fresh URL (e.g., browser refresh), creates a new connection.
     const socket = getDominoSocket(token);
     socketRef.current = socket;
 
-    // Ask server for current game state (triggers domino:game-state if playing)
-    socket.emit('domino:join-room', { roomCode: code });
+    let loadDone = false;
+    let roomStateHits = 0;
+    const markLoaded = () => { loadDone = true; };
 
-    // Re-join on auto-reconnect
-    const onConnect = () => socket.emit('domino:join-room', { roomCode: code });
+    const requestState = () => socket.emit('domino:join-room', { roomCode: code });
+
+    // Initial request
+    requestState();
+
+    // Re-join on auto-reconnect (new socket ID after drop)
+    const onConnect = () => requestState();
     socket.on('connect', onConnect);
 
-    // Retry once more in case server was mid-startNewRound on first join
-    const retryJoin = setTimeout(() => socket.emit('domino:join-room', { roomCode: code }), 2000);
+    // Retry every 2.5s until game state arrives
+    const retryInterval = setInterval(() => {
+      if (!loadDone) requestState();
+    }, 2500);
 
-    socket.on('domino:game-state', (data) => {
-      clearTimeout(retryJoin);
+    const applyGameState = (data) => {
+      if (loadDone) return;
+      markLoaded();
+      clearInterval(retryInterval);
       setHand(data.hand || []);
       setBoard(data.board || []);
       setLeftEnd(data.leftEnd ?? null);
@@ -81,23 +89,34 @@ export default function DominoGame() {
       setPhase('playing');
       setLoading(false);
       setLoadingTimedOut(false);
-    });
+    };
 
-    // If we arrive before the game starts (race condition), room-state is sent.
-    // Just keep waiting — domino:round-starting will arrive shortly.
-    socket.on('domino:room-state', () => {
-      // Game hasn't started yet; stay in loading state and wait for round-starting
-      console.log('[DominoGame] got room-state while waiting — game starting soon');
+    socket.on('domino:game-state', applyGameState);
+
+    // room-state means server thinks room is waiting — retry, and if repeated, restart game
+    socket.on('domino:room-state', (data) => {
+      if (loadDone) return;
+      roomStateHits++;
+      console.log('[DominoGame] room-state hit', roomStateHits, 'status=', data?.status);
+      if (roomStateHits >= 2) {
+        // Server may have restarted — try to start the game again
+        socket.emit('domino:start-with-bots', { roomCode: code });
+      }
+      setTimeout(requestState, 1000);
     });
 
     socket.on('domino:hand-update', ({ hand: h }) => {
+      if (!loadDone) return;
       setHand(h);
-      setLoading(false);
     });
 
     socket.on('domino:round-starting', (data) => {
       if (!data || data.roundNumber === lastRoundRef.current) return;
       lastRoundRef.current = data.roundNumber;
+      if (!loadDone) {
+        markLoaded();
+        clearInterval(retryInterval);
+      }
       setBoard([]);
       setLeftEnd(null);
       setRightEnd(null);
@@ -106,7 +125,6 @@ export default function DominoGame() {
       setScores(data.scores || { team1: 0, team2: 0 });
       setRoundNumber(data.roundNumber || 1);
       setForcedFirstTile(data.forcedFirstTile || null);
-      // Use hand/myTeam from personalized payload if present
       if (data.hand) setHand(data.hand);
       if (data.myTeam != null) setMyTeam(data.myTeam);
       setPhase('playing');
@@ -160,13 +178,16 @@ export default function DominoGame() {
 
     socket.on('domino:error', ({ message }) => showToast(message, 'error'));
 
+    // After 10s without a response, show timeout screen (auto-retries every 2.5s so this is a last resort)
     const fallback = setTimeout(() => {
-      setLoading(false);
-      setLoadingTimedOut(true);
-    }, 8000);
+      if (!loadDone) {
+        setLoading(false);
+        setLoadingTimedOut(true);
+      }
+    }, 10000);
 
     return () => {
-      clearTimeout(retryJoin);
+      clearInterval(retryInterval);
       clearTimeout(fallback);
       clearTimeout(toastTimer.current);
       socket.off('connect', onConnect);
@@ -238,8 +259,9 @@ export default function DominoGame() {
   const handleReconnect = () => {
     setLoading(true);
     setLoadingTimedOut(false);
+    // Re-trigger the full useEffect by remounting would be ideal, but we can
+    // at least re-emit join-room. The interval inside the effect is still running.
     socketRef.current?.emit('domino:join-room', { roomCode: code });
-    setTimeout(() => { setLoading(false); setLoadingTimedOut(true); }, 5000);
   };
 
   const currentPlayerObj = players.find((p) => p.id === currentPlayer);
