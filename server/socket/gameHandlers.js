@@ -44,26 +44,30 @@ async function startGame(io, roomCode, activeRoom) {
     });
     console.log(`[${new Date().toISOString()}] Game started in room ${roomCode} word: ${word}`);
   } catch (err) {
-    console.error(`[startGame] ERROR in room ${roomCode}:`, err.message);
-    io.to(roomCode).emit('error', { message: 'Error al iniciar la partida. Intenta de nuevo.' });
+    console.error(`[startGame] ERROR in room ${roomCode}:`, err.message, err.stack);
+    io.to(roomCode).emit('error', { message: `Error al iniciar: ${err.message}` });
   }
 }
 
 function register(io, socket, activeRooms) {
   socket.on('player-ready', async ({ roomCode }) => {
-    const room = activeRooms.get(roomCode);
-    if (!room || room.status !== 'waiting') return;
-    const player = room.players.get(socket.user.id);
-    if (!player || player.isReady) return;
+    try {
+      const room = activeRooms.get(roomCode);
+      if (!room || room.status !== 'waiting') return;
+      const player = room.players.get(socket.user.id);
+      if (!player || player.isReady) return;
 
-    player.isReady = true;
-    room.readyCount++;
+      player.isReady = true;
+      room.readyCount++;
 
-    io.to(roomCode).emit('player-ready-update', { userId: socket.user.id, readyCount: room.readyCount, total: room.players.size });
-    console.log(`[${new Date().toISOString()}] ${socket.user.username} ready in ${roomCode} (${room.readyCount}/${room.players.size})`);
+      io.to(roomCode).emit('player-ready-update', { userId: socket.user.id, readyCount: room.readyCount, total: room.players.size });
+      console.log(`[${new Date().toISOString()}] ${socket.user.username} ready in ${roomCode} (${room.readyCount}/${room.players.size})`);
 
-    if (room.readyCount === room.players.size && room.players.size >= 2) {
-      await startGame(io, roomCode, room);
+      if (room.readyCount === room.players.size && room.players.size >= 2) {
+        await startGame(io, roomCode, room);
+      }
+    } catch (err) {
+      console.error('[player-ready] unhandled error:', err.message);
     }
   });
 
